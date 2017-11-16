@@ -38,6 +38,7 @@ public class SmbConfiguration extends GenericFileConfiguration {
     private String path;
     private int port;
     private SmbApiFactory smbApiFactory;
+    private boolean throwExceptionOnConnectFailed;
 
     public SmbConfiguration(URI uri, SmbApiFactory smbApiFactory) {
         configure(uri);
@@ -156,4 +157,11 @@ public class SmbConfiguration extends GenericFileConfiguration {
         return smbApiFactory;
     }
 
+    public boolean isThrowExceptionOnConnectFailed() {
+        return throwExceptionOnConnectFailed;
+    }
+
+    public void setThrowExceptionOnConnectFailed(boolean throwExceptionOnConnectFailed) {
+        this.throwExceptionOnConnectFailed = throwExceptionOnConnectFailed;
+    }
 }
