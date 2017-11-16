@@ -27,16 +27,15 @@ import java.util.List;
 import jcifs.smb.SmbException;
 import jcifs.smb.SmbFile;
 
+import org.apache.camel.Endpoint;
 import org.apache.camel.Message;
 import org.apache.camel.Processor;
-import org.apache.camel.component.file.GenericFile;
-import org.apache.camel.component.file.GenericFileConsumer;
-import org.apache.camel.component.file.GenericFileEndpoint;
-import org.apache.camel.component.file.GenericFileOperations;
+import org.apache.camel.component.file.*;
 import org.apache.camel.util.FileUtil;
 import org.apache.camel.util.ObjectHelper;
 
 public class SmbConsumer extends GenericFileConsumer<SmbFile> {
+    protected transient boolean loggedIn;
 
     private String endpointPath;
     private String currentRelativePath = "";
@@ -47,8 +46,17 @@ public class SmbConsumer extends GenericFileConsumer<SmbFile> {
     }
 
     @Override
-    protected boolean pollDirectory(String fileName, List<GenericFile<SmbFile>> fileList, int depth) {
+    @SuppressWarnings("unchecked")
+    public GenericFileEndpoint<SmbFile> getEndpoint() {
+        return (GenericFileEndpoint<SmbFile>) super.getEndpoint();
+    }
 
+    private SmbConfiguration getSmbConfiguration() {
+        return ((SmbConfiguration)getEndpoint().getConfiguration());
+    }
+
+    @Override
+    protected boolean pollDirectory(String fileName, List<GenericFile<SmbFile>> fileList, int depth) {
         if (log.isTraceEnabled()) {
             log.trace("pollDirectory() running. My delay is [" + this.getDelay() + "] and my strategy is [" + this.getPollStrategy().getClass().toString() + "]");
             log.trace("pollDirectory() fileName[" + fileName + "]");
@@ -56,40 +64,51 @@ public class SmbConsumer extends GenericFileConsumer<SmbFile> {
 
         List<SmbFile> smbFiles;
         boolean currentFileIsDir = false;
-        smbFiles = operations.listFiles(fileName);
-        for (SmbFile smbFile : smbFiles) {
-            if (!canPollMoreFiles(fileList)) {
-                return false;
-            }
-            try {
-                if (smbFile.isDirectory()) {
-                    currentFileIsDir = true;
-                } else {
-                    currentFileIsDir = false;
+
+        try {
+            smbFiles = operations.listFiles(fileName);
+
+            for (SmbFile smbFile : smbFiles) {
+                if (!canPollMoreFiles(fileList)) {
+                    return false;
                 }
-            } catch (SmbException e1) {
-                throw ObjectHelper.wrapRuntimeCamelException(e1);
-            }
-            if (currentFileIsDir) {
-                if (endpoint.isRecursive()) {
-                    currentRelativePath = smbFile.getName().split("/")[0] + "/";
-                    int nextDepth = depth++;
-                    pollDirectory(fileName + "/" + smbFile.getName(), fileList, nextDepth);
-                } else {
-                    currentRelativePath = "";
-                }
-            } else {
                 try {
-                    GenericFile<SmbFile> genericFile = asGenericFile(fileName, smbFile);
-                    if (isValidFile(genericFile, false, smbFiles)) {
-                        fileList.add(asGenericFile(fileName, smbFile));
+                    if (smbFile.isDirectory()) {
+                        currentFileIsDir = true;
+                    } else {
+                        currentFileIsDir = false;
                     }
-                } catch (IOException e) {
-                    throw ObjectHelper.wrapRuntimeCamelException(e);
+                } catch (SmbException e1) {
+                    throw ObjectHelper.wrapRuntimeCamelException(e1);
+                }
+                if (currentFileIsDir) {
+                    if (endpoint.isRecursive()) {
+                        currentRelativePath = smbFile.getName().split("/")[0] + "/";
+                        int nextDepth = depth++;
+                        pollDirectory(fileName + "/" + smbFile.getName(), fileList, nextDepth);
+                    } else {
+                        currentRelativePath = "";
+                    }
+                } else {
+                    try {
+                        GenericFile<SmbFile> genericFile = asGenericFile(fileName, smbFile);
+                        if (isValidFile(genericFile, false, smbFiles)) {
+                            fileList.add(asGenericFile(fileName, smbFile));
+                        }
+                    } catch (IOException e) {
+                        throw ObjectHelper.wrapRuntimeCamelException(e);
+                    }
                 }
             }
+
+            return true;
+
+        } catch (GenericFileOperationFailedException ex) {
+            if (getSmbConfiguration().isThrowExceptionOnConnectFailed()) {
+                throw ex;
+            }
+            return false;
         }
-        return true;
     }
 
     @Override
