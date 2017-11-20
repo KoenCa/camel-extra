@@ -22,6 +22,7 @@
 package org.apacheextras.camel.component.jcifs;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import jcifs.smb.SmbException;
@@ -62,52 +63,54 @@ public class SmbConsumer extends GenericFileConsumer<SmbFile> {
             log.trace("pollDirectory() fileName[" + fileName + "]");
         }
 
-        List<SmbFile> smbFiles;
+        List<SmbFile> smbFiles = getSmbFiles(fileName);
         boolean currentFileIsDir = false;
 
-        try {
-            smbFiles = operations.listFiles(fileName);
-
-            for (SmbFile smbFile : smbFiles) {
-                if (!canPollMoreFiles(fileList)) {
-                    return false;
-                }
-                try {
-                    if (smbFile.isDirectory()) {
-                        currentFileIsDir = true;
-                    } else {
-                        currentFileIsDir = false;
-                    }
-                } catch (SmbException e1) {
-                    throw ObjectHelper.wrapRuntimeCamelException(e1);
-                }
-                if (currentFileIsDir) {
-                    if (endpoint.isRecursive()) {
-                        currentRelativePath = smbFile.getName().split("/")[0] + "/";
-                        int nextDepth = depth++;
-                        pollDirectory(fileName + "/" + smbFile.getName(), fileList, nextDepth);
-                    } else {
-                        currentRelativePath = "";
-                    }
+        for (SmbFile smbFile : smbFiles) {
+            if (!canPollMoreFiles(fileList)) {
+                return false;
+            }
+            try {
+                if (smbFile.isDirectory()) {
+                    currentFileIsDir = true;
                 } else {
-                    try {
-                        GenericFile<SmbFile> genericFile = asGenericFile(fileName, smbFile);
-                        if (isValidFile(genericFile, false, smbFiles)) {
-                            fileList.add(asGenericFile(fileName, smbFile));
-                        }
-                    } catch (IOException e) {
-                        throw ObjectHelper.wrapRuntimeCamelException(e);
+                    currentFileIsDir = false;
+                }
+            } catch (SmbException e1) {
+                throw ObjectHelper.wrapRuntimeCamelException(e1);
+            }
+            if (currentFileIsDir) {
+                if (endpoint.isRecursive()) {
+                    currentRelativePath = smbFile.getName().split("/")[0] + "/";
+                    int nextDepth = depth++;
+                    pollDirectory(fileName + "/" + smbFile.getName(), fileList, nextDepth);
+                } else {
+                    currentRelativePath = "";
+                }
+            } else {
+                try {
+                    GenericFile<SmbFile> genericFile = asGenericFile(fileName, smbFile);
+                    if (isValidFile(genericFile, false, smbFiles)) {
+                        fileList.add(asGenericFile(fileName, smbFile));
                     }
+                } catch (IOException e) {
+                    throw ObjectHelper.wrapRuntimeCamelException(e);
                 }
             }
+        }
 
-            return true;
+        return true;
+    }
 
+    private List<SmbFile> getSmbFiles(String fileName) {
+        try {
+            List<SmbFile> smbFiles = operations.listFiles(fileName);
+            return smbFiles;
         } catch (GenericFileOperationFailedException ex) {
             if (getSmbConfiguration().isThrowExceptionOnConnectFailed()) {
                 throw ex;
             }
-            return false;
+            return new ArrayList<>();
         }
     }
 
